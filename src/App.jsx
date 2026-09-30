@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import './App.css'; // N'oublie pas d'importer le CSS
+import { useState, useEffect } from 'react';
+import keycloak from './keycloack';
+import './App.css';
 
 // --- COMPOSANTS DES PAGES ---
 // Ces fonctions simulent tes futures pages. Plus tard, tu pourras les mettre dans des fichiers séparés.
@@ -42,19 +43,19 @@ function Calendrier() {
         <h3>{nomsDesMois[moisCourant]} {anneeCourante}</h3>
         <button onClick={moisSuivant} className="btn-nav">▶</button>
       </div>
-      
+
       {/* Grille du calendrier */}
       <div className="calendrier-grille">
         {/* Affichage des jours de la semaine (Lun, Mar, Mer...) */}
         {joursDeLaSemaine.map((jour) => (
           <div key={jour} className="jour-nom">{jour}</div>
         ))}
-        
+
         {/* Cases vides pour décaler le 1er du mois au bon jour */}
         {Array.from({ length: premierJourDuMois }).map((_, index) => (
           <div key={`vide-${index}`} className="jour-case vide"></div>
         ))}
-        
+
         {/* Les cases des jours du mois */}
         {Array.from({ length: nombreDeJours }).map((_, index) => {
           const jourNumero = index + 1;
@@ -84,8 +85,8 @@ function PageHistorique() {
     <div className="page-content">
       <h2>📅 Historique</h2>
       <p>Retrouve tes anciennes performances ici.</p>
-      <Calendrier/>
-      
+      <Calendrier />
+
     </div>
   );
 }
@@ -95,15 +96,33 @@ function PageParametre() {
     <div className="page-content">
       <h2>⚙️ Paramètres</h2>
       <p>Gère ton profil et tes préférences.</p>
+      <button className="btn-action">Connecte toi</button>
     </div>
   );
 }
+
+
 
 // --- COMPOSANT PRINCIPAL ---
 export default function App() {
   // Le state 'activeTab' mémorise l'onglet actuellement sélectionné. 
   // Par défaut, on s'ouvre sur l'entraînement.
   const [activeTab, setActiveTab] = useState('entrainement');
+  const [estConnecte, setEstConnecte] = useState(false);
+
+  
+  // Ce useEffect s'exécute une seule fois au chargement de la page
+  useEffect(() => {
+
+    // onLoad: 'login-required' force la redirection vers Keycloak si non connecté
+    keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
+      setEstConnecte(authenticated);
+    }).catch(console.error);
+  }, []);
+
+  if (!estConnecte) {
+    return <div>Chargement sécurisé en cours...</div>;
+  }
 
   // Cette fonction choisit quelle page afficher en fonction de l'état
   const renderPage = () => {
@@ -112,34 +131,48 @@ export default function App() {
     if (activeTab === 'parametre') return <PageParametre />;
   };
 
+
+
+
+
   return (
     <div className="app-container">
-      {/* Zone d'affichage dynamique (le contenu change) */}
+      {/* On peut même afficher le nom de l'utilisateur ! */}
+      <header style={{ padding: '10px', textAlign: 'center', background: '#fff' }}>
+        Bonjour, {keycloak.tokenParsed?.preferred_username} 👋
+        <button
+          onClick={() => keycloak.logout()}
+          style={{ marginLeft: '15px', color: 'red', cursor: 'pointer', border: 'none', background: 'none' }}
+        >
+          Se déconnecter
+        </button>
+      </header>
+
       <main className="main-content">
         {renderPage()}
       </main>
 
-      {/* Barre de navigation fixe en bas */}
+      {/* ... (Gardez votre barre de navigation nav.bottom-nav ici) ... */}
       <nav className="bottom-nav">
-        <button 
-          className={activeTab === 'entrainement' ? 'active' : ''} 
+        <button
+          className={activeTab === 'entrainement' ? 'active' : ''}
           onClick={() => setActiveTab('entrainement')}
         >
-          🏋️‍♂️<br/>Entraînement
+          🏋️‍♂️<br />Entraînement
         </button>
-        
-        <button 
-          className={activeTab === 'historique' ? 'active' : ''} 
+
+        <button
+          className={activeTab === 'historique' ? 'active' : ''}
           onClick={() => setActiveTab('historique')}
         >
-          📜<br/>Historique
+          📜<br />Historique
         </button>
-        
-        <button 
-          className={activeTab === 'parametre' ? 'active' : ''} 
+
+        <button
+          className={activeTab === 'parametre' ? 'active' : ''}
           onClick={() => setActiveTab('parametre')}
         >
-          ⚙️<br/>Paramètres
+          ⚙️<br />Paramètres
         </button>
       </nav>
     </div>
