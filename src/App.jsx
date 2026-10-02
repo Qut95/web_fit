@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import keycloak from './keycloack';
 import './App.css';
+import PageEntrainement from './PageEntrainement'
 
 // --- COMPOSANTS DES PAGES ---
 // Ces fonctions simulent tes futures pages. Plus tard, tu pourras les mettre dans des fichiers séparés.
@@ -70,15 +71,7 @@ function Calendrier() {
   );
 }
 
-function PageEntrainement() {
-  return (
-    <div className="page-content">
-      <h2>💪 Entraînement</h2>
-      <p>Prêt pour ta séance du jour ?</p>
-      <button className="btn-action">Créer ta propre scéance</button>
-    </div>
-  );
-}
+
 
 function PageHistorique() {
   return (
@@ -105,18 +98,52 @@ function PageParametre() {
 
 // --- COMPOSANT PRINCIPAL ---
 export default function App() {
-  // Le state 'activeTab' mémorise l'onglet actuellement sélectionné. 
-  // Par défaut, on s'ouvre sur l'entraînement.
   const [activeTab, setActiveTab] = useState('entrainement');
   const [estConnecte, setEstConnecte] = useState(false);
 
-  
-  // Ce useEffect s'exécute une seule fois au chargement de la page
-  useEffect(() => {
+  // Fonction pour envoyer les infos de Keycloak à votre base de données
+  const synchroniserUtilisateur = async () => {
+    try {
+      // On récupère le token d'accès brut généré par Keycloak
+      const token = keycloak.token;
+      
+      // On extrait les informations décodées par Keycloak
+      const infosUtilisateur = {
+        id: keycloak.tokenParsed?.sub,
+        pseudo: keycloak.tokenParsed?.preferred_username,
+        email: keycloak.tokenParsed?.email
+      };
 
+      // Remplacez cette URL par l'adresse de votre propre Backend API
+      const reponse = await fetch('http://localhost:3000/api/utilisateurs/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // TRÈS IMPORTANT : On envoie le token dans l'en-tête pour sécuriser l'API
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(infosUtilisateur)
+      });
+
+      if (!reponse.ok) {
+        console.error("Erreur lors de l'enregistrement dans la base de données");
+      } else {
+        console.log("Utilisateur synchronisé avec succès dans la BD !");
+      }
+    } catch (erreur) {
+      console.error("Erreur réseau lors de la synchronisation :", erreur);
+    }
+  };
+
+  useEffect(() => {
     // onLoad: 'login-required' force la redirection vers Keycloak si non connecté
     keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
       setEstConnecte(authenticated);
+      
+      // Si la connexion réussit, on synchronise l'utilisateur avec la base de données
+      if (authenticated) {
+        synchroniserUtilisateur();
+      }
     }).catch(console.error);
   }, []);
 
@@ -126,7 +153,7 @@ export default function App() {
 
   // Cette fonction choisit quelle page afficher en fonction de l'état
   const renderPage = () => {
-    if (activeTab === 'entrainement') return <PageEntrainement />;
+    if (activeTab === 'entrainement') return <PageEntrainement keycloak={keycloak}/>;
     if (activeTab === 'historique') return <PageHistorique />;
     if (activeTab === 'parametre') return <PageParametre />;
   };
