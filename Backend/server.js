@@ -189,6 +189,164 @@ app.post('/api/entrainements', async (req, res) => {
   }
 });
 
+
+// GET : Récupérer tous les entraînements d'un utilisateur
+app.get('/api/entrainements', async (req, res) => {
+  const { utilisateur_id } = req.query;
+  
+  if (!utilisateur_id) {
+    return res.status(400).json({ erreur: 'utilisateur_id manquant' });
+  }
+
+  try {
+    // On récupère les entraînements du plus récent au plus ancien
+    const result = await pool.query(
+      'SELECT * FROM entrainements WHERE utilisateur_id = $1 ORDER BY cree_le DESC',
+      [utilisateur_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ Erreur GET /api/entrainements :', err.message);
+    res.status(500).json({ erreur: 'Erreur lors de la récupération des entraînements' });
+  }
+});
+
+// DELETE : Supprimer un entraînement spécifique
+app.delete('/api/entrainements/:id', async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const result = await pool.query('DELETE FROM entrainements WHERE id = $1 RETURNING id', [id]);
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ erreur: "L'entraînement n'existe pas." });
+    }
+    
+    res.status(200).json({ message: 'Entraînement supprimé avec succès' });
+  } catch (err) {
+    console.error('❌ Erreur DELETE /api/entrainements :', err.message);
+    res.status(500).json({ erreur: 'Erreur lors de la suppression' });
+  }
+});
+
+
+// GET : Récupérer les détails d'un entraînement spécifique (avec ses exercices)
+app.get('/api/entrainements/:id/details', async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // 1. Récupérer les infos de base de l'entraînement
+    const entrainementRes = await pool.query('SELECT * FROM entrainements WHERE id = $1', [id]);
+    if (entrainementRes.rowCount === 0) {
+      return res.status(404).json({ erreur: "Entraînement introuvable." });
+    }
+    
+    // 2. Récupérer les exercices associés, triés par leur ordre d'exécution
+    const exosRes = await pool.query(`
+      SELECT ee.*, e.nom 
+      FROM entrainement_exercices ee 
+      JOIN exercices e ON ee.exercice_id = e.id 
+      WHERE ee.entrainement_id = $1 
+      ORDER BY ee.ordre ASC
+    `, [id]);
+    
+    // On renvoie l'entraînement avec un tableau "exercices" inclus
+    res.json({ 
+      ...entrainementRes.rows[0], 
+      exercices: exosRes.rows 
+    });
+  } catch (err) {
+    console.error('❌ Erreur GET détails entraînement :', err.message);
+    res.status(500).json({ erreur: 'Erreur lors de la récupération des détails' });
+  }
+});
+
+// PUT : Modifier un entraînement existant
+app.put('/api/entrainements/:id', async (req, res) => {
+  const { id } = req.params;
+  const { titre, description, exercices } = req.body;
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    // 1. Mettre à jour le titre et la description
+    await client.query(
+      'UPDATE entrainements SET titre = $1, description = $2 WHERE id = $3',
+      [titre, description, id]
+    );
+
+    // 2. Supprimer les anciens exercices de cet entraînement
+    await client.query('DELETE FROM entrainement_exercices WHERE entrainement_id = $1', [id]);
+
+    // 3. Insérer les nouveaux exercices avec leurs paramètres mis à jour
+    for (let i = 0; i < exercices.length; i++) {
+      const exo = exercices[i];
+      await client.query(
+        `INSERT INTO entrainement_exercices
+         (entrainement_id, exercice_id, ordre, nombre_series, repetitions, poids_kg, repos_secondes, difficulte_percue)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          id, 
+          exo.exercice_id, 
+          i + 1, 
+          exo.nombre_series || 1, 
+          String(exo.repetitions || '10'), 
+          exo.poids_kg || null, 
+          exo.repos_secondes || 0, 
+          exo.difficulte_percue || null
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ message: 'Entraînement mis à jour avec succès !' });
+  } catch (err) {
+    if (client) await client.query('ROLLBACK');
+    console.error("❌ Erreur SQL modification entraînement :", err.message);
+    res.status(500).json({ erreur: "Erreur serveur lors de la modification" });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// ==========================================
+// HISTORIQUE DES SÉANCES
+// ==========================================
+
+// POST : Sauvegarder une séance terminée
+app.post('/api/historique', async (req, res) => {
+  const { utilisateur_id, titre, duree_secondes, details } = req.body;
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO historique_sessions (utilisateur_id, titre, duree_secondes, details) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [utilisateur_id, titre, duree_secondes, JSON.stringify(details)]
+    );
+    res.status(201).json({ message: 'Séance enregistrée !', session: result.rows[0] });
+  } catch (err) {
+    console.error('❌ Erreur POST /api/historique :', err.message);
+    res.status(500).json({ erreur: 'Erreur lors de la sauvegarde de la séance' });
+  }
+});
+
+// GET : Récupérer l'historique d'un utilisateur
+app.get('/api/historique', async (req, res) => {
+  const { utilisateur_id } = req.query;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM historique_sessions WHERE utilisateur_id = $1 ORDER BY date_seance DESC',
+      [utilisateur_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('❌ Erreur GET /api/historique :', err.message);
+    res.status(500).json({ erreur: 'Erreur lors de la récupération de l\'historique' });
+  }
+});
+
 // --- DÉMARRAGE DU SERVEUR ---
 const server = app.listen(port, () => {
   console.log(`🚀 Serveur Backend démarré sur http://localhost:${port}`);
