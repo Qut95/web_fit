@@ -6,63 +6,52 @@ import PageEntrainement from './PageEntrainement'
 // --- COMPOSANTS DES PAGES ---
 // Ces fonctions simulent tes futures pages. Plus tard, tu pourras les mettre dans des fichiers séparés.
 
-function Calendrier() {
-  // On initialise la date sur aujourd'hui
+function Calendrier({ historique = [] }) {
   const [dateActuelle, setDateActuelle] = useState(new Date());
 
-  const moisCourant = dateActuelle.getMonth(); // De 0 (Janvier) à 11 (Décembre)
+  const moisCourant = dateActuelle.getMonth(); 
   const anneeCourante = dateActuelle.getFullYear();
 
-  const nomsDesMois = [
-    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
-  ];
+  const nomsDesMois = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
   const joursDeLaSemaine = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
-  // 1. Calculer combien il y a de jours dans ce mois (ex: 28, 30, 31)
   const nombreDeJours = new Date(anneeCourante, moisCourant + 1, 0).getDate();
-
-  // 2. Trouver quel jour de la semaine tombe le 1er du mois
   let premierJourDuMois = new Date(anneeCourante, moisCourant, 1).getDay();
-  // On ajuste pour que la semaine commence le lundi (par défaut JS commence le dimanche)
   premierJourDuMois = premierJourDuMois === 0 ? 6 : premierJourDuMois - 1;
 
-  // 3. Fonctions pour naviguer
-  const moisPrecedent = () => {
-    setDateActuelle(new Date(anneeCourante, moisCourant - 1, 1));
-  };
+  const moisPrecedent = () => setDateActuelle(new Date(anneeCourante, moisCourant - 1, 1));
+  const moisSuivant = () => setDateActuelle(new Date(anneeCourante, moisCourant + 1, 1));
 
-  const moisSuivant = () => {
-    setDateActuelle(new Date(anneeCourante, moisCourant + 1, 1));
-  };
+  // NOUVEAU : Trouver quels jours de ce mois contiennent une séance
+  const joursAvecEntrainement = historique
+    .map(session => new Date(session.date_seance))
+    .filter(date => date.getFullYear() === anneeCourante && date.getMonth() === moisCourant)
+    .map(date => date.getDate());
 
   return (
     <div className="calendrier-container">
-      {/* En-tête avec les boutons de navigation */}
       <div className="calendrier-header">
         <button onClick={moisPrecedent} className="btn-nav">◀</button>
         <h3>{nomsDesMois[moisCourant]} {anneeCourante}</h3>
         <button onClick={moisSuivant} className="btn-nav">▶</button>
       </div>
 
-      {/* Grille du calendrier */}
       <div className="calendrier-grille">
-        {/* Affichage des jours de la semaine (Lun, Mar, Mer...) */}
-        {joursDeLaSemaine.map((jour) => (
-          <div key={jour} className="jour-nom">{jour}</div>
-        ))}
-
-        {/* Cases vides pour décaler le 1er du mois au bon jour */}
-        {Array.from({ length: premierJourDuMois }).map((_, index) => (
-          <div key={`vide-${index}`} className="jour-case vide"></div>
-        ))}
-
-        {/* Les cases des jours du mois */}
+        {joursDeLaSemaine.map((jour) => <div key={jour} className="jour-nom">{jour}</div>)}
+        {Array.from({ length: premierJourDuMois }).map((_, i) => <div key={`vide-${i}`} className="jour-case vide"></div>)}
+        
         {Array.from({ length: nombreDeJours }).map((_, index) => {
           const jourNumero = index + 1;
+          const aFaitSport = joursAvecEntrainement.includes(jourNumero); // Vérifie si ce jour est dans l'historique
+          
           return (
-            <div key={jourNumero} className="jour-case">
+            <div 
+              key={jourNumero} 
+              className="jour-case" 
+              style={{ backgroundColor: aFaitSport ? '#4CAF50' : 'transparent', color: aFaitSport ? 'white' : 'inherit', fontWeight: aFaitSport ? 'bold' : 'normal' }}
+            >
               {jourNumero}
+              {aFaitSport && <span style={{ fontSize: '10px', display: 'block' }}>🔥</span>}
             </div>
           );
         })}
@@ -73,13 +62,55 @@ function Calendrier() {
 
 
 
-function PageHistorique() {
+function PageHistorique({ keycloak }) {
+  const [historique, setHistorique] = useState([]);
+  const [chargement, setChargement] = useState(true);
+  const userId = keycloak?.tokenParsed?.sub;
+
+  useEffect(() => {
+    const chargerHistorique = async () => {
+      if (!userId) return;
+      try {
+        const res = await fetch(`http://localhost:3000/api/historique?utilisateur_id=${userId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setHistorique(data);
+        }
+      } catch (err) {
+        console.error("Erreur réseau :", err);
+      } finally {
+        setChargement(false);
+      }
+    };
+    chargerHistorique();
+  }, [userId]);
+
   return (
     <div className="page-content">
       <h2>📅 Historique</h2>
       <p>Retrouve tes anciennes performances ici.</p>
-      <Calendrier />
+      
+      {/* On passe l'historique au calendrier */}
+      <Calendrier historique={historique} />
 
+      <h3 style={{ marginTop: '30px' }}>Dernières séances :</h3>
+      {chargement ? (
+        <p>Chargement...</p>
+      ) : historique.length === 0 ? (
+        <p>Aucun entraînement enregistré pour le moment.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {historique.map(session => (
+            <div key={session.id} style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', backgroundColor: 'white' }}>
+              <h4 style={{ margin: '0 0 5px 0' }}>{session.titre}</h4>
+              <p style={{ margin: 0, color: '#555' }}>
+                Le {new Date(session.date_seance).toLocaleDateString('fr-FR')} 
+                &nbsp;•&nbsp; ⏱️ {Math.floor(session.duree_secondes / 60)}m {session.duree_secondes % 60}s
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -154,7 +185,7 @@ export default function App() {
   // Cette fonction choisit quelle page afficher en fonction de l'état
   const renderPage = () => {
     if (activeTab === 'entrainement') return <PageEntrainement keycloak={keycloak}/>;
-    if (activeTab === 'historique') return <PageHistorique />;
+    if (activeTab === 'historique') return <PageHistorique keycloak={keycloak} />; 
     if (activeTab === 'parametre') return <PageParametre />;
   };
 
@@ -165,7 +196,7 @@ export default function App() {
   return (
     <div className="app-container">
       {/* On peut même afficher le nom de l'utilisateur ! */}
-      <header style={{ padding: '10px', textAlign: 'center', background: '#fff' }}>
+      <header >
         Bonjour, {keycloak.tokenParsed?.preferred_username} 👋
         <button
           onClick={() => keycloak.logout()}
