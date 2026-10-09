@@ -9,7 +9,7 @@ import PageEntrainement from './PageEntrainement'
 function Calendrier({ historique = [] }) {
   const [dateActuelle, setDateActuelle] = useState(new Date());
 
-  const moisCourant = dateActuelle.getMonth(); 
+  const moisCourant = dateActuelle.getMonth();
   const anneeCourante = dateActuelle.getFullYear();
 
   const nomsDesMois = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -39,15 +39,15 @@ function Calendrier({ historique = [] }) {
       <div className="calendrier-grille">
         {joursDeLaSemaine.map((jour) => <div key={jour} className="jour-nom">{jour}</div>)}
         {Array.from({ length: premierJourDuMois }).map((_, i) => <div key={`vide-${i}`} className="jour-case vide"></div>)}
-        
+
         {Array.from({ length: nombreDeJours }).map((_, index) => {
           const jourNumero = index + 1;
           const aFaitSport = joursAvecEntrainement.includes(jourNumero); // Vérifie si ce jour est dans l'historique
-          
+
           return (
-            <div 
-              key={jourNumero} 
-              className="jour-case" 
+            <div
+              key={jourNumero}
+              className="jour-case"
               style={{ backgroundColor: aFaitSport ? '#4CAF50' : 'transparent', color: aFaitSport ? 'white' : 'inherit', fontWeight: aFaitSport ? 'bold' : 'normal' }}
             >
               {jourNumero}
@@ -62,14 +62,21 @@ function Calendrier({ historique = [] }) {
 
 
 
-function PageHistorique({ keycloak }) {
+function PageHistorique({ keycloak, isVisible }) {
   const [historique, setHistorique] = useState([]);
   const [chargement, setChargement] = useState(true);
+
+  const [sessionOuverte, setSessionOuverte] = useState(null);
+  const toggleDetails = (id) => {
+    setSessionOuverte(sessionOuverte === id ? null : id);
+  };
+
   const userId = keycloak?.tokenParsed?.sub;
 
   useEffect(() => {
     const chargerHistorique = async () => {
       if (!userId) return;
+      setChargement(true); // On remet le chargement pendant le fetch
       try {
         const res = await fetch(`http://localhost:3000/api/historique?utilisateur_id=${userId}`);
         if (res.ok) {
@@ -82,15 +89,18 @@ function PageHistorique({ keycloak }) {
         setChargement(false);
       }
     };
-    chargerHistorique();
-  }, [userId]);
+
+    // 🔴 NOUVEAU : On recharge les données uniquement si l'onglet est visible
+    if (isVisible) {
+      chargerHistorique();
+    }
+  }, [userId, isVisible]); // Dépendance à isVisible ajoutée
 
   return (
     <div className="page-content">
       <h2>📅 Historique</h2>
       <p>Retrouve tes anciennes performances ici.</p>
-      
-      {/* On passe l'historique au calendrier */}
+
       <Calendrier historique={historique} />
 
       <h3 style={{ marginTop: '30px' }}>Dernières séances :</h3>
@@ -99,16 +109,67 @@ function PageHistorique({ keycloak }) {
       ) : historique.length === 0 ? (
         <p>Aucun entraînement enregistré pour le moment.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {historique.map(session => (
-            <div key={session.id} style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', backgroundColor: 'white' }}>
-              <h4 style={{ margin: '0 0 5px 0' }}>{session.titre}</h4>
-              <p style={{ margin: 0, color: '#555' }}>
-                Le {new Date(session.date_seance).toLocaleDateString('fr-FR')} 
-                &nbsp;•&nbsp; ⏱️ {Math.floor(session.duree_secondes / 60)}m {session.duree_secondes % 60}s
-              </p>
-            </div>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          {historique.map((session) => {
+            // Selon le driver pg et le type SQL, session.details peut être une string ou déjà un objet/array
+            let details = [];
+            try {
+              details = typeof session.details === 'string' ? JSON.parse(session.details) : (session.details || []);
+            } catch (e) {
+              details = [];
+            }
+
+            const estDeplie = sessionOuverte === session.id;
+
+            return (
+              <div key={session.id} style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', backgroundColor: 'white' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 5px 0' }}>{session.titre}</h4>
+                    <p style={{ margin: 0, color: '#555', fontSize: '0.9em' }}>
+                      Le {new Date(session.date_seance).toLocaleDateString('fr-FR')}
+                      &nbsp;•&nbsp; ⏱️ {Math.floor(session.duree_secondes / 60)}m {session.duree_secondes % 60}s
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleDetails(session.id)}
+                    style={{ padding: '6px 10px', cursor: 'pointer', borderRadius: '5px', border: '1px solid #ccc', backgroundColor: '#f9f9f9' }}
+                  >
+                    {estDeplie ? 'Masquer ▲' : 'Détails ▼'}
+                  </button>
+                </div>
+
+                {/* DÉTAIL DES EXERCICES ET SÉRIES */}
+                {estDeplie && (
+                  <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #eee' }}>
+                    {details.length === 0 ? (
+                      <p style={{ fontStyle: 'italic', color: '#888' }}>Aucun détail disponible pour cette séance.</p>
+                    ) : (
+                      details.map((exo, i) => (
+                        <div key={i} style={{ marginBottom: '12px' }}>
+                          <strong style={{ color: '#2196F3' }}>{exo.nom}</strong>
+
+                          {Array.isArray(exo.series) ? (
+                            <ul style={{ margin: '5px 0 0 15px', padding: 0, listStyle: 'disc' }}>
+                              {exo.series.map((s, idx) => (
+                                <li key={idx} style={{ color: '#444', fontSize: '0.9em' }}>
+                                  Série {s.numero || idx + 1} : <strong>{s.reps} reps</strong> @ <strong>{s.poids} kg</strong> {s.terminee ? '✅' : '❌'}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p style={{ margin: '4px 0 0 15px', fontSize: '0.85em', color: '#666' }}>
+                              {exo.nombre_series} séries × {exo.repetitions} reps ({exo.poids_kg} kg)
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -137,7 +198,7 @@ export default function App() {
     try {
       // On récupère le token d'accès brut généré par Keycloak
       const token = keycloak.token;
-      
+
       // On extrait les informations décodées par Keycloak
       const infosUtilisateur = {
         id: keycloak.tokenParsed?.sub,
@@ -151,7 +212,7 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
           // TRÈS IMPORTANT : On envoie le token dans l'en-tête pour sécuriser l'API
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(infosUtilisateur)
       });
@@ -170,7 +231,7 @@ export default function App() {
     // onLoad: 'login-required' force la redirection vers Keycloak si non connecté
     keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
       setEstConnecte(authenticated);
-      
+
       // Si la connexion réussit, on synchronise l'utilisateur avec la base de données
       if (authenticated) {
         synchroniserUtilisateur();
@@ -182,12 +243,7 @@ export default function App() {
     return <div>Chargement sécurisé en cours...</div>;
   }
 
-  // Cette fonction choisit quelle page afficher en fonction de l'état
-  const renderPage = () => {
-    if (activeTab === 'entrainement') return <PageEntrainement keycloak={keycloak}/>;
-    if (activeTab === 'historique') return <PageHistorique keycloak={keycloak} />; 
-    if (activeTab === 'parametre') return <PageParametre />;
-  };
+
 
 
 
@@ -207,7 +263,18 @@ export default function App() {
       </header>
 
       <main className="main-content">
-        {renderPage()}
+        <div style={{ display: activeTab === 'entrainement' ? 'block' : 'none', height: '100%' }}>
+          <PageEntrainement keycloak={keycloak} />
+        </div>
+
+        <div style={{ display: activeTab === 'historique' ? 'block' : 'none', height: '100%' }}>
+          {/* On passe isVisible pour qu'il recharge les données quand on l'ouvre */}
+          <PageHistorique keycloak={keycloak} isVisible={activeTab === 'historique'} />
+        </div>
+
+        <div style={{ display: activeTab === 'parametre' ? 'block' : 'none', height: '100%' }}>
+          <PageParametre />
+        </div>
       </main>
 
       {/* ... (Gardez votre barre de navigation nav.bottom-nav ici) ... */}
