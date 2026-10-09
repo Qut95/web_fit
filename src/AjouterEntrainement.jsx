@@ -3,21 +3,18 @@
 // ==========================================
 
 import React, { useState, useEffect } from 'react';
+import Icon from './Icon';
 
 function AjouterEntrainement({ keycloak }) {
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
   const [exercicesDisponibles, setExercicesDisponibles] = useState([]);
   
-  // Champ pour créer un nouvel exercice à la volée
   const [nouveauNomExo, setNouveauNomExo] = useState('');
-  
-  // Liste des exercices ajoutés à la séance en cours
   const [exercicesSeance, setExercicesSeance] = useState([]);
 
-  const userId = keycloak?.tokenParsed?.sub; // ID Keycloak de l'utilisateur connecté
+  const userId = keycloak?.tokenParsed?.sub;
 
-  // Charger la liste des exercices créés par l'utilisateur
   useEffect(() => {
     if (userId) {
       fetch(`http://localhost:3000/api/exercices?utilisateur_id=${userId}`)
@@ -27,8 +24,6 @@ function AjouterEntrainement({ keycloak }) {
     }
   }, [userId]);
 
-  // Ajouter un nouvel exercice dans la base globale de l'utilisateur
-  // Ajouter un nouvel exercice dans la base globale de l'utilisateur
   const ajouterNouvelExercice = async () => {
     if (!nouveauNomExo.trim()) return;
     try {
@@ -38,7 +33,6 @@ function AjouterEntrainement({ keycloak }) {
         body: JSON.stringify({ utilisateur_id: userId, nom: nouveauNomExo, description: '' })
       });
       
-      // On s'assure que le serveur a répondu un succès (statut 200 ou 201)
       if (!res.ok) {
         throw new Error("Le serveur a refusé la création de l'exercice");
       }
@@ -52,7 +46,6 @@ function AjouterEntrainement({ keycloak }) {
     }
   };
 
-  // Ajouter une ligne d'exercice à l'entraînement
   const ajouterExerciceASeance = (exerciceId) => {
     const exo = exercicesDisponibles.find((e) => e.id === parseInt(exerciceId));
     if (!exo) return;
@@ -70,14 +63,12 @@ function AjouterEntrainement({ keycloak }) {
     ]);
   };
 
-  // Modifier un paramètre de l'exercice (séries, rép, poids, etc.)
   const mettreAJourExercice = (index, champ, valeur) => {
     const copie = [...exercicesSeance];
     copie[index][champ] = valeur;
     setExercicesSeance(copie);
   };
 
-  // Soumettre l'entraînement au Backend
   const enregistrerEntrainement = async (e) => {
     e.preventDefault();
     if (!titre || exercicesSeance.length === 0) {
@@ -103,7 +94,7 @@ function AjouterEntrainement({ keycloak }) {
       });
 
       if (res.ok) {
-        alert("Entraînement enregistré avec succès ! 🎉");
+        alert("Entraînement enregistré avec succès !");
         setTitre('');
         setDescription('');
         setExercicesSeance([]);
@@ -117,10 +108,10 @@ function AjouterEntrainement({ keycloak }) {
 
   return (
     <div className="page-content">
-      <h2>🏋️‍♂️ Créer un entraînement</h2>
+      <h2>Créer un entraînement</h2>
 
       <form onSubmit={enregistrerEntrainement}>
-        <div>
+        <div className="form-group">
           <label>Titre de l'entraînement :</label>
           <input 
             type="text" 
@@ -131,7 +122,7 @@ function AjouterEntrainement({ keycloak }) {
           />
         </div>
 
-        <div>
+        <div className="form-group">
           <label>Description (optionnelle) :</label>
           <textarea 
             placeholder="Ex: Focus pectoraux et triceps" 
@@ -143,27 +134,26 @@ function AjouterEntrainement({ keycloak }) {
         <hr />
 
         <h3>1. Créer un exercice s'il n'existe pas</h3>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="creer-exercice-inline">
           <input 
             type="text" 
             placeholder="Nom de l'exercice (Ex: Développé couché)" 
             value={nouveauNomExo} 
             onChange={(e) => setNouveauNomExo(e.target.value)} 
           />
-          <button type="button" onClick={ajouterNouvelExercice}>+ Créer exercice</button>
+          <button type="button" onClick={ajouterNouvelExercice} className="btn-ajouter-exo"><Icon name="plus" size={16} /> Créer exercice</button>
         </div>
 
         <h3>2. Ajouter des exercices à la séance</h3>
-        <select onChange={(e) => { if(e.target.value) ajouterExerciceASeance(e.target.value); e.target.value = ''; }}>
+        <select onChange={(e) => { if(e.target.value) ajouterExerciceASeance(e.target.value); e.target.value = ''; }} className="select-exercice">
           <option value="">-- Choisir un exercice --</option>
           {exercicesDisponibles.map((exo) => (
             <option key={exo.id} value={exo.id}>{exo.nom}</option>
           ))}
         </select>
 
-        {/* Liste des exercices ajoutés */}
         {exercicesSeance.map((item, index) => (
-          <div key={index} style={{ border: '1px solid #ccc', padding: '10px', margin: '10px 0', borderRadius: '8px' }}>
+          <div key={index} className="exercice-item">
             <h4>{index + 1}. {item.nom}</h4>
             
             <label>Séries : </label>
@@ -206,8 +196,8 @@ function AjouterEntrainement({ keycloak }) {
           </div>
         ))}
 
-        <button type="submit" className="btn-action" style={{ marginTop: '15px' }}>
-          💾 Enregistrer l'entraînement
+        <button type="submit" className="btn-action btn-save-entrainement">
+          <Icon name="check" size={18} /> Enregistrer l'entraînement
         </button>
       </form>
     </div>
