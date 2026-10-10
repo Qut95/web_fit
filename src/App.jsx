@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
-import keycloak from './keycloack';
+import { useState, useEffect, useRef } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import { apiFetch } from './api';
+import Login from './Login';
 import './App.css';
 import PageEntrainement from './PageEntrainement'
 import Icon from './Icon';
@@ -56,7 +59,7 @@ function Calendrier({ historique = [] }) {
   );
 }
 
-function PageHistorique({ keycloak, isVisible }) {
+function PageHistorique({ isVisible }) {
   const [historique, setHistorique] = useState([]);
   const [chargement, setChargement] = useState(true);
 
@@ -65,14 +68,11 @@ function PageHistorique({ keycloak, isVisible }) {
     setSessionOuverte(sessionOuverte === id ? null : id);
   };
 
-  const userId = keycloak?.tokenParsed?.sub;
-
   useEffect(() => {
     const chargerHistorique = async () => {
-      if (!userId) return;
       setChargement(true);
       try {
-        const res = await fetch(`http://localhost:3000/api/historique?utilisateur_id=${userId}`);
+        const res = await apiFetch(`/api/historique`);
         if (res.ok) {
           const data = await res.json();
           setHistorique(data);
@@ -87,7 +87,7 @@ function PageHistorique({ keycloak, isVisible }) {
     if (isVisible) {
       chargerHistorique();
     }
-  }, [userId, isVisible]);
+  }, [isVisible]);
 
   return (
     <div className="page-content">
@@ -165,7 +165,7 @@ function PageHistorique({ keycloak, isVisible }) {
   );
 }
 
-function PageParametre({ keycloak, theme, onChangeTheme }) {
+function PageParametre({ profil, theme, onChangeTheme }) {
   const themes = [
     { id: 'light', label: 'Clair', icon: 'sun' },
     { id: 'dark', label: 'Sombre', icon: 'moon' }
@@ -200,11 +200,11 @@ function PageParametre({ keycloak, theme, onChangeTheme }) {
         <dl className="parametre-infos">
           <div>
             <dt>Pseudo</dt>
-            <dd>{keycloak?.tokenParsed?.preferred_username}</dd>
+            <dd>{profil?.pseudo}</dd>
           </div>
           <div>
             <dt>E-mail</dt>
-            <dd>{keycloak?.tokenParsed?.email || 'Non renseigné'}</dd>
+            <dd>{profil?.email || 'Non renseigné'}</dd>
           </div>
         </dl>
       </section>
@@ -214,7 +214,9 @@ function PageParametre({ keycloak, theme, onChangeTheme }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('entrainement');
-  const [estConnecte, setEstConnecte] = useState(false);
+  const [profil, setProfil] = useState(null);
+  const [chargement, setChargement] = useState(true);
+  const inscriptionEnCours = useRef(false);
 
   // Thème : préférence enregistrée, sinon celle du système
   const [theme, setTheme] = useState(() => {
@@ -240,52 +242,71 @@ export default function App() {
     }
   };
 
-  const synchroniserUtilisateur = async () => {
+  // Enregistre / met à jour l'utilisateur dans la base (l'identité vient du token)
+  const synchroniserUtilisateur = async (p) => {
     try {
-      const token = keycloak.token;
-      const infosUtilisateur = {
-        id: keycloak.tokenParsed?.sub,
-        pseudo: keycloak.tokenParsed?.preferred_username,
-        email: keycloak.tokenParsed?.email
-      };
-
-      const reponse = await fetch('http://localhost:3000/api/utilisateurs/sync', {
+      const reponse = await apiFetch('/api/utilisateurs/sync', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(infosUtilisateur)
+        body: JSON.stringify({ pseudo: p.pseudo })
       });
-
       if (!reponse.ok) {
         console.error("Erreur lors de l'enregistrement dans la base de données");
-      } else {
-        console.log("Utilisateur synchronisé avec succès dans la BD !");
       }
     } catch (erreur) {
-      console.error("Erreur réseau lors de la synchronisation :", erreur);
+      console.error('Erreur réseau lors de la synchronisation :', erreur);
     }
   };
 
+  const ouvrirSession = async (utilisateur) => {
+    if (!utilisateur) {
+      setProfil(null);
+      return;
+    }
+    const p = {
+      id: utilisateur.uid,
+      pseudo: utilisateur.displayName || utilisateur.email?.split('@')[0] || 'Athlète',
+      email: utilisateur.email
+    };
+    await synchroniserUtilisateur(p);
+    setProfil(p);
+  };
+
+  // Appelé par l'écran de connexion une fois le compte et le pseudo créés
+  const finInscription = async () => {
+    inscriptionEnCours.current = false;
+    const utilisateur = auth.currentUser;
+    if (utilisateur) setChargement(true);
+    await ouvrirSession(utilisateur);
+    setChargement(false);
+  };
+
   useEffect(() => {
-    keycloak.init({ onLoad: 'login-required' }).then((authenticated) => {
-      setEstConnecte(authenticated);
-      if (authenticated) {
-        synchroniserUtilisateur();
-      }
-    }).catch(console.error);
+    return onAuthStateChanged(auth, async (utilisateur) => {
+      if (inscriptionEnCours.current) return;
+      if (utilisateur) setChargement(true);
+      await ouvrirSession(utilisateur);
+      setChargement(false);
+    });
   }, []);
 
-  if (!estConnecte) {
-    return <div>Chargement sécurisé en cours...</div>;
+  if (chargement) {
+    return <div className="ecran-chargement">Chargement…</div>;
+  }
+
+  if (!profil) {
+    return (
+      <Login
+        debutInscription={() => { inscriptionEnCours.current = true; }}
+        finInscription={finInscription}
+      />
+    );
   }
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <span>Bonjour, {keycloak.tokenParsed?.preferred_username}</span>
-        <button onClick={() => keycloak.logout()} className="btn-logout">
+        <span>Bonjour, {profil.pseudo}</span>
+        <button onClick={() => signOut(auth)} className="btn-logout">
           <Icon name="log-out" size={15} />
           Se déconnecter
         </button>
@@ -293,15 +314,15 @@ export default function App() {
 
       <main className="main-content">
         <div className={activeTab === 'entrainement' ? 'tab-active' : 'tab-hidden'}>
-          <PageEntrainement keycloak={keycloak} />
+          <PageEntrainement user={profil} />
         </div>
 
         <div className={activeTab === 'historique' ? 'tab-active' : 'tab-hidden'}>
-          <PageHistorique keycloak={keycloak} isVisible={activeTab === 'historique'} />
+          <PageHistorique isVisible={activeTab === 'historique'} />
         </div>
 
         <div className={activeTab === 'parametre' ? 'tab-active' : 'tab-hidden'}>
-          <PageParametre keycloak={keycloak} theme={theme} onChangeTheme={changerTheme} />
+          <PageParametre profil={profil} theme={theme} onChangeTheme={changerTheme} />
         </div>
       </main>
 

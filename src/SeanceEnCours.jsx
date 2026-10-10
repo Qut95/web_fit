@@ -3,8 +3,9 @@
 // ==========================================
 import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
+import { apiFetch } from './api';
 
-function SeanceEnCours({ entrainementBase, userId, terminerSeance, exercicesDisponibles }) {
+function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles }) {
   const [seance, setSeance] = useState(() => {
     const exercicesInitiaux = (entrainementBase.exercices || []).map((exo) => {
       const nbSeries = Number(exo.nombre_series) || 1;
@@ -91,14 +92,13 @@ function SeanceEnCours({ entrainementBase, userId, terminerSeance, exercicesDisp
     if (!window.confirm("Avez-vous terminé votre séance ?")) return;
 
     const payload = {
-      utilisateur_id: userId,
       titre: seance.titre,
       duree_secondes: chronoGlobal,
       details: seance.exercices
     };
 
     try {
-      const res = await fetch('http://localhost:3000/api/historique', {
+      const res = await apiFetch('/api/historique', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

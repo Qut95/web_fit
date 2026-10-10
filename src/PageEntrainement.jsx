@@ -2,11 +2,12 @@
 // COMPOSANT REACT : PageEntrainement.jsx
 // ==========================================
 import AjouterEntrainement from './AjouterEntrainement'
+import { apiFetch } from './api';
 import Icon from './Icon';
 import SeanceEnCours from './SeanceEnCours';
 import React, { useState, useEffect } from 'react';
 
-function PageEntrainement({ keycloak }) {
+function PageEntrainement({ user }) {
     const [afficherAjout, setAfficherAjout] = useState(false);
     const [entrainements, setEntrainements] = useState([]);
     const [chargement, setChargement] = useState(true);
@@ -17,13 +18,13 @@ function PageEntrainement({ keycloak }) {
 
     const [nouveauNomExo, setNouveauNomExo] = useState('');
 
-    const userId = keycloak?.tokenParsed?.sub;
+    const userId = user?.id;
 
     const chargerEntrainements = async () => {
         if (!userId) return;
         setChargement(true);
         try {
-            const res = await fetch(`http://localhost:3000/api/entrainements?utilisateur_id=${userId}`);
+            const res = await apiFetch(`/api/entrainements`);
             if (res.ok) {
                 const data = await res.json();
                 setEntrainements(data);
@@ -38,7 +39,7 @@ function PageEntrainement({ keycloak }) {
     const chargerExercicesDisponibles = async () => {
         if (!userId) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/exercices?utilisateur_id=${userId}`);
+            const res = await apiFetch(`/api/exercices`);
             if (res.ok) {
                 const data = await res.json();
                 setExercicesDisponibles(data);
@@ -59,10 +60,11 @@ function PageEntrainement({ keycloak }) {
 
     const lancerEntrainement = async (id) => {
         try {
-            const res = await fetch(`http://localhost:3000/api/entrainements/${id}/details`);
+            const res = await apiFetch(`/api/entrainements/${id}/details`);
             if (res.ok) {
                 const data = await res.json();
                 setSeanceActive(data);
+                chargerExercicesDisponibles();
             }
         } catch (err) {
             console.error("Erreur lancement :", err);
@@ -72,7 +74,7 @@ function PageEntrainement({ keycloak }) {
     const supprimerEntrainement = async (id) => {
         if (!window.confirm("Êtes-vous sûr de vouloir supprimer cet entraînement ?")) return;
         try {
-            const res = await fetch(`http://localhost:3000/api/entrainements/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`/api/entrainements/${id}`, { method: 'DELETE' });
             if (res.ok) setEntrainements(entrainements.filter((e) => e.id !== id));
         } catch (err) {
             console.error("Erreur réseau :", err);
@@ -81,7 +83,7 @@ function PageEntrainement({ keycloak }) {
 
     const voirEntrainement = async (id) => {
         try {
-            const res = await fetch(`http://localhost:3000/api/entrainements/${id}/details`);
+            const res = await apiFetch(`/api/entrainements/${id}/details`);
             if (res.ok) {
                 const data = await res.json();
                 setEntrainementAEditer(data);
@@ -142,10 +144,10 @@ function PageEntrainement({ keycloak }) {
     const creerEtAjouterExercice = async () => {
         if (!nouveauNomExo.trim()) return;
         try {
-            const res = await fetch('http://localhost:3000/api/exercices', {
+            const res = await apiFetch('/api/exercices', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ utilisateur_id: userId, nom: nouveauNomExo, description: '' })
+                body: JSON.stringify({ nom: nouveauNomExo, description: '' })
             });
 
             if (!res.ok) throw new Error("Erreur serveur");
@@ -168,7 +170,7 @@ function PageEntrainement({ keycloak }) {
         }
 
         try {
-            const res = await fetch(`http://localhost:3000/api/entrainements/${entrainementAEditer.id}`, {
+            const res = await apiFetch(`/api/entrainements/${entrainementAEditer.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(entrainementAEditer)
@@ -189,7 +191,6 @@ function PageEntrainement({ keycloak }) {
         return (
             <SeanceEnCours
                 entrainementBase={seanceActive}
-                userId={userId}
                 exercicesDisponibles={exercicesDisponibles}
                 terminerSeance={() => setSeanceActive(null)}
             />
@@ -201,7 +202,7 @@ function PageEntrainement({ keycloak }) {
                 <button onClick={() => setAfficherAjout(false)} className="btn-action btn-retour">
                     <Icon name="arrow-left" size={18} /> Retour aux entraînements
                 </button>
-                <AjouterEntrainement keycloak={keycloak} />
+                <AjouterEntrainement />
             </div>
         );
     }

@@ -4,8 +4,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
+import { apiFetch } from './api';
 
-function AjouterEntrainement({ keycloak }) {
+function AjouterEntrainement() {
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
   const [exercicesDisponibles, setExercicesDisponibles] = useState([]);
@@ -13,24 +14,20 @@ function AjouterEntrainement({ keycloak }) {
   const [nouveauNomExo, setNouveauNomExo] = useState('');
   const [exercicesSeance, setExercicesSeance] = useState([]);
 
-  const userId = keycloak?.tokenParsed?.sub;
-
   useEffect(() => {
-    if (userId) {
-      fetch(`http://localhost:3000/api/exercices?utilisateur_id=${userId}`)
-        .then((res) => res.json())
-        .then((data) => setExercicesDisponibles(data))
-        .catch(console.error);
-    }
-  }, [userId]);
+    apiFetch('/api/exercices')
+      .then((res) => res.json())
+      .then((data) => setExercicesDisponibles(data))
+      .catch(console.error);
+  }, []);
 
   const ajouterNouvelExercice = async () => {
     if (!nouveauNomExo.trim()) return;
     try {
-      const res = await fetch('http://localhost:3000/api/exercices', {
+      const res = await apiFetch('/api/exercices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ utilisateur_id: userId, nom: nouveauNomExo, description: '' })
+        body: JSON.stringify({ nom: nouveauNomExo, description: '' })
       });
       
       if (!res.ok) {
@@ -77,18 +74,16 @@ function AjouterEntrainement({ keycloak }) {
     }
 
     const payload = {
-      utilisateur_id: userId,
       titre,
       description,
       exercices: exercicesSeance
     };
 
     try {
-      const res = await fetch('http://localhost:3000/api/entrainements', {
+      const res = await apiFetch('/api/entrainements', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${keycloak?.token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });

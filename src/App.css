@@ -853,3 +853,83 @@ form h3 {
   text-align: right;
   overflow-wrap: anywhere;
 }
+
+/* ==========================================================
+   ÉCRAN DE CONNEXION
+   ========================================================== */
+.ecran-chargement {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.login-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+.login-brand {
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 14px;
+}
+
+.login-brand h1 {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.login-brand p {
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+.login-card {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.login-card .theme-switch {
+  max-width: none;
+  margin-bottom: 20px;
+  background: var(--bg);
+}
+
+.login-card .btn-create {
+  margin: 8px 0 0;
+}
+
+.login-card .btn-create:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.form-erreur {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: 8px;
+}
