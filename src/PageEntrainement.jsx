@@ -3,6 +3,7 @@
 // ==========================================
 import AjouterEntrainement from './AjouterEntrainement'
 import { apiFetch } from './api';
+import { chargerSeance, effacerSeance } from './seanceStorage';
 import Icon from './Icon';
 import SeanceEnCours from './SeanceEnCours';
 import React, { useState, useEffect } from 'react';
@@ -58,11 +59,29 @@ function PageEntrainement({ user }) {
         }
     }, [userId, afficherAjout, entrainementAEditer]);
 
+    // Reprise d'une séance interrompue (app fermée, page rechargée...)
+    useEffect(() => {
+        if (!userId) return;
+        const sauvegarde = chargerSeance(userId);
+        if (!sauvegarde?.entrainementBase) return;
+
+        const DOUZE_HEURES = 12 * 60 * 60 * 1000;
+        const tropAncienne = Date.now() - sauvegarde.debut > DOUZE_HEURES;
+        if (tropAncienne && !window.confirm("Une séance commencée il y a plus de 12 h est toujours en cours. La reprendre ?")) {
+            effacerSeance(userId);
+            return;
+        }
+
+        setSeanceActive(sauvegarde.entrainementBase);
+        chargerExercicesDisponibles();
+    }, [userId]);
+
     const lancerEntrainement = async (id) => {
         try {
             const res = await apiFetch(`/api/entrainements/${id}/details`);
             if (res.ok) {
                 const data = await res.json();
+                effacerSeance(userId);
                 setSeanceActive(data);
                 chargerExercicesDisponibles();
             }
@@ -191,6 +210,7 @@ function PageEntrainement({ user }) {
         return (
             <SeanceEnCours
                 entrainementBase={seanceActive}
+                userId={userId}
                 exercicesDisponibles={exercicesDisponibles}
                 terminerSeance={() => setSeanceActive(null)}
             />

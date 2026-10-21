@@ -4,55 +4,80 @@
 import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 import { apiFetch } from './api';
+import { chargerSeance, sauvegarderSeance, effacerSeance } from './seanceStorage';
 
-function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles }) {
-  const [seance, setSeance] = useState(() => {
-    const exercicesInitiaux = (entrainementBase.exercices || []).map((exo) => {
-      const nbSeries = Number(exo.nombre_series) || 1;
-      const series = Array.from({ length: nbSeries }, (_, i) => ({
-        numero: i + 1,
-        reps: exo.repetitions || '10',
-        poids: exo.poids_kg !== null && exo.poids_kg !== undefined ? exo.poids_kg : 0,
-        terminee: false
-      }));
+function construireSeance(entrainementBase) {
+  const exercicesInitiaux = (entrainementBase.exercices || []).map((exo) => {
+    const nbSeries = Number(exo.nombre_series) || 1;
+    const series = Array.from({ length: nbSeries }, (_, i) => ({
+      numero: i + 1,
+      reps: exo.repetitions || '10',
+      poids: exo.poids_kg !== null && exo.poids_kg !== undefined ? exo.poids_kg : 0,
+      terminee: false
+    }));
 
-      return {
-        ...exo,
-        series
-      };
-    });
-
-    return {
-      ...entrainementBase,
-      exercices: exercicesInitiaux
-    };
+    return { ...exo, series };
   });
 
-  const [chronoGlobal, setChronoGlobal] = useState(0);
-  const [chronoRepos, setChronoRepos] = useState(0);
-  const [reposActif, setReposActif] = useState(false);
+  return { ...entrainementBase, exercices: exercicesInitiaux };
+}
 
+const formaterTemps = (secondes) => {
+  const h = Math.floor(secondes / 3600);
+  const m = Math.floor((secondes % 3600) / 60).toString().padStart(2, '0');
+  const s = (secondes % 60).toString().padStart(2, '0');
+  return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+};
+
+function SeanceEnCours({ entrainementBase, userId, terminerSeance, exercicesDisponibles }) {
+  // Séance éventuellement sauvegardée sur cet appareil (reprise après fermeture)
+  const [sauvegarde] = useState(() => {
+    const s = chargerSeance(userId);
+    return s && s.entrainementBase?.id === entrainementBase.id ? s : null;
+  });
+
+  const [seance, setSeance] = useState(() => sauvegarde?.seance ?? construireSeance(entrainementBase));
+
+  // Les chronos ne comptent pas les secondes : on retient l'heure de début
+  // et l'heure de fin du repos, et on calcule l'écart avec l'heure actuelle.
+  // Ainsi, mise en veille ou app fermée n'ont aucun effet sur le temps affiché.
+  const [debut] = useState(() => sauvegarde?.debut ?? Date.now());
+  const [reposFin, setReposFin] = useState(() => sauvegarde?.reposFin ?? null);
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+
+  // Rafraîchit l'affichage, et immédiatement au retour sur l'app
   useEffect(() => {
-    const interval = setInterval(() => setChronoGlobal((prev) => prev + 1), 1000);
-    return () => clearInterval(interval);
+    const actualiser = () => setMaintenant(Date.now());
+    const interval = setInterval(actualiser, 500);
+    document.addEventListener('visibilitychange', actualiser);
+    window.addEventListener('focus', actualiser);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', actualiser);
+      window.removeEventListener('focus', actualiser);
+    };
   }, []);
 
-  useEffect(() => {
-    let interval;
-    if (reposActif && chronoRepos > 0) {
-      interval = setInterval(() => setChronoRepos((prev) => prev - 1), 1000);
-    } else if (chronoRepos === 0 && reposActif) {
-      setReposActif(false);
-      alert("Repos terminé, c'est reparti !");
-    }
-    return () => clearInterval(interval);
-  }, [reposActif, chronoRepos]);
+  const chronoGlobal = Math.max(0, Math.floor((maintenant - debut) / 1000));
+  const chronoRepos = reposFin !== null ? Math.max(0, Math.ceil((reposFin - maintenant) / 1000)) : 0;
+  const reposActif = reposFin !== null && chronoRepos > 0;
 
-  const formaterTemps = (secondes) => {
-    const m = Math.floor(secondes / 60).toString().padStart(2, '0');
-    const s = (secondes % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  // Fin du repos
+  useEffect(() => {
+    if (reposFin !== null && maintenant >= reposFin) {
+      setReposFin(null);
+      // On n'avertit que si le repos vient juste de se terminer
+      if (maintenant - reposFin < 5000) {
+        navigator.vibrate?.(200);
+        alert("Repos terminé, c'est reparti !");
+      }
+    }
+  }, [maintenant, reposFin]);
+
+  // Sauvegarde automatique à chaque changement
+  useEffect(() => {
+    sauvegarderSeance(userId, { entrainementBase, seance, debut, reposFin });
+  }, [userId, entrainementBase, seance, debut, reposFin]);
 
   const modifierSerie = (exoIndex, serieIndex, champ, valeur) => {
     const copieExercices = [...seance.exercices];
@@ -69,8 +94,7 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
     setSeance({ ...seance, exercices: copieExercices });
 
     if (!etaitCoche && tempsRepos > 0) {
-      setChronoRepos(tempsRepos);
-      setReposActif(true);
+      setReposFin(Date.now() + tempsRepos * 1000);
     }
   };
 
@@ -93,7 +117,7 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
 
     const payload = {
       titre: seance.titre,
-      duree_secondes: chronoGlobal,
+      duree_secondes: Math.max(0, Math.floor((Date.now() - debut) / 1000)),
       details: seance.exercices
     };
 
@@ -106,6 +130,7 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
 
       if (res.ok) {
         alert("Séance terminée et enregistrée !");
+        effacerSeance(userId);
         terminerSeance();
       } else {
         const erreur = await res.json();
@@ -115,6 +140,13 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
     } catch (err) {
       console.error("Erreur de sauvegarde :", err);
       alert("Problème de réseau. Vérifiez que votre backend tourne.");
+    }
+  };
+
+  const annulerSeance = () => {
+    if (window.confirm("Annuler la séance ? (Rien ne sera sauvegardé)")) {
+      effacerSeance(userId);
+      terminerSeance();
     }
   };
 
@@ -131,12 +163,12 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
 
       {seance.exercices.map((exo, exoIndex) => (
         <div key={exoIndex} className="seance-exo-card">
-          
+
           <div className="seance-exo-header">
             <h3>{exo.nom}</h3>
-            
-            <select 
-              onChange={(e) => remplacerExercice(exoIndex, e.target.value)} 
+
+            <select
+              onChange={(e) => remplacerExercice(exoIndex, e.target.value)}
               className="select-remplacement"
               title="Remplacer cet exercice"
             >
@@ -153,12 +185,12 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
 
           <div className="series-list">
             {exo.series.map((serie, serieIndex) => (
-              <div 
-                key={serieIndex} 
+              <div
+                key={serieIndex}
                 className={`serie-item ${serie.terminee ? 'serie-terminee' : 'serie-a-faire'}`}
               >
                 <span className="serie-numero">Série {serie.numero}</span>
-                
+
                 <div className="serie-input-group">
                   <label>Reps:</label>
                   <input
@@ -181,8 +213,8 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
                 </div>
 
                 <div className="serie-action-group">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={serie.terminee}
                     onChange={() => cocherSerie(exoIndex, serieIndex, exo.repos_secondes)}
                     className="checkbox-serie"
@@ -200,8 +232,8 @@ function SeanceEnCours({ entrainementBase, terminerSeance, exercicesDisponibles 
       <button onClick={validerSeance} className="btn-action btn-terminer-seance">
         <Icon name="flag" size={18} /> Terminer la séance
       </button>
-      
-      <button onClick={() => { if (window.confirm("Annuler la séance ? (Rien ne sera sauvegardé)")) terminerSeance(); }} className="btn-action btn-annuler-seance">
+
+      <button onClick={annulerSeance} className="btn-action btn-annuler-seance">
         Annuler la séance
       </button>
     </div>
